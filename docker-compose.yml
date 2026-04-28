@@ -4,74 +4,110 @@ services:
 
   postgres-server:
     image: timescale/timescaledb:2.14.2-pg14
+    restart: unless-stopped
     networks:
       - zbx_net
-    environment:
-      - POSTGRES_USER=zabbix
-      - POSTGRES_PASSWORD=StrongPassword
-      - POSTGRES_DB=zabbixdb
+    env_file:
+      - .env
     volumes:
-      - /zabbix-postgres:/var/lib/postgresql/data:rw
-    command: postgres -c shared_preload_libraries=timescaledb
+      - ./zabbix-postgres:/var/lib/postgresql/data:rw
+    command: >
+      postgres
+      -c shared_preload_libraries=timescaledb
+      -c max_connections=100
+      -c shared_buffers=256MB
+      -c work_mem=4MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 1g
 
   zabbix-server-pgsql:
-    image: zabbix/zabbix-server-pgsql:alpine-7.4-latest
+    image: zabbix/zabbix-server-pgsql:alpine-7.4.0
+    restart: unless-stopped
     networks:
       - zbx_net
     ports:
       - "10051:10051"
+    env_file:
+      - .env
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-      - /zabbix-data/alertscripts:/usr/lib/zabbix/alertscripts:ro
-      - /zabbix-data/externalscripts:/usr/lib/zabbix/externalscripts:ro
-      - /zabbix-data/export:/var/lib/zabbix/export:rw
-      - /zabbix-data/modules:/var/lib/zabbix/modules:ro
-      - /zabbix-data/enc:/var/lib/zabbix/enc:ro
-      - /zabbix-data/ssh_keys:/var/lib/zabbix/ssh_keys:ro
-      - /zabbix-data/mibs:/var/lib/zabbix/mibs:ro
-      - /zabbix-data/snmptraps:/var/lib/zabbix/snmptraps:rw
+      - ./zabbix-data/alertscripts:/usr/lib/zabbix/alertscripts:ro
+      - ./zabbix-data/externalscripts:/usr/lib/zabbix/externalscripts:ro
+      - ./zabbix-data/export:/var/lib/zabbix/export:rw
+      - ./zabbix-data/modules:/var/lib/zabbix/modules:ro
+      - ./zabbix-data/enc:/var/lib/zabbix/enc:ro
+      - ./zabbix-data/ssh_keys:/var/lib/zabbix/ssh_keys:ro
+      - ./zabbix-data/mibs:/var/lib/zabbix/mibs:ro
+      - ./zabbix-data/snmptraps:/var/lib/zabbix/snmptraps:rw
     environment:
       - DB_SERVER_HOST=postgres-server
-      - POSTGRES_DB=zabbixdb
-      - POSTGRES_USER=zabbix
-      - POSTGRES_PASSWORD=StrongPassword
       - ZBX_JAVAGATEWAY=zabbix-java-gateway
     depends_on:
       - postgres-server
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 512m
 
   zabbix-web-nginx-pgsql:
-    image: zabbix/zabbix-web-nginx-pgsql:alpine-7.4-latest
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-7.4.0
+    restart: unless-stopped
     networks:
       - zbx_net
     ports:
-      - "80:8080"
-      - "443:8443"
+      - "127.0.0.1:80:8080"
+      - "127.0.0.1:443:8443"
+    env_file:
+      - .env
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-      - /zabbix-nginx/nginx:/etc/ssl/nginx:ro
-      - /zabbix-nginx/modules/:/usr/share/zabbix/modules/:ro
+      - ./zabbix-nginx/nginx:/etc/ssl/nginx:ro
+      - ./zabbix-nginx/modules/:/usr/share/zabbix/modules/:ro
     environment:
       - ZBX_SERVER_HOST=zabbix-server-pgsql
       - DB_SERVER_HOST=postgres-server
-      - POSTGRES_DB=zabbixdb
-      - POSTGRES_USER=zabbix
-      - POSTGRES_PASSWORD=StrongPassword
     depends_on:
       - postgres-server
       - zabbix-server-pgsql
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 512m
 
   zabbix-java-gateway:
-    image: zabbix/zabbix-java-gateway:alpine-7.4-latest
+    image: zabbix/zabbix-java-gateway:alpine-7.4.0
+    restart: unless-stopped
     networks:
       - zbx_net
     ports:
       - "10052:10052"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 256m
+
   zabbix-agent2:
-    image: zabbix/zabbix-agent2:alpine-7.4-latest
+    image: zabbix/zabbix-agent2:alpine-7.4.0
+    restart: unless-stopped
     networks:
       - zbx_net
+    env_file:
+      - .env
     environment:
       - ZBX_SERVER_HOST=zabbix-server-pgsql
       - ZBX_HOSTNAME=zabbix-server
@@ -81,6 +117,12 @@ services:
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       - zabbix-server-pgsql
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 256m
 
 networks:
   zbx_net:
